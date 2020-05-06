@@ -59,6 +59,7 @@ struct FrameReq {
   int count;
   int stride;
   AVRational frame_base;
+  std::vector<int> frame_selected;
 };
 
 enum ScaleMethod {

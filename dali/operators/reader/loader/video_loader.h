@@ -141,6 +141,7 @@ struct sequence_meta {
   int label;
   int height;
   int width;
+  int total_frames;
 };
 
 
@@ -152,6 +153,9 @@ class VideoLoader : public Loader<GPUBackend, SequenceWrapper> {
       file_root_(spec.GetArgument<std::string>("file_root")),
       file_list_(spec.GetArgument<std::string>("file_list")),
       count_(spec.GetArgument<int>("sequence_length")),
+      seg_num_(spec.GetArgument<int>("seg_num")),
+      seg_length_(spec.GetArgument<int>("seg_length")),
+      is_training_(spec.GetArgument<bool>("is_training")),
       step_(spec.GetArgument<int>("step")),
       stride_(spec.GetArgument<int>("stride")),
       max_height_(0),
@@ -203,7 +207,7 @@ class VideoLoader : public Loader<GPUBackend, SequenceWrapper> {
   VideoFile& get_or_open_file(const std::string &filename);
   void seek(VideoFile& file, int frame);
   void read_file();
-  void push_sequence_to_read(std::string filename, int frame, int count);
+  void push_sequence_to_read(std::string filename, int frame, int count, int total_frames);
   void receive_frames(SequenceWrapper& sequence);
 
  protected:
@@ -213,6 +217,7 @@ class VideoLoader : public Loader<GPUBackend, SequenceWrapper> {
     int total_count = 1 + (count_ - 1) * stride_;
 
     for (size_t i = 0; i < file_info_.size(); ++i) {
+     try {
       const auto& file = get_or_open_file(file_info_[i].video_file);
       const auto stream = file.fmt_ctx_->streams[file.vid_stream_idx_];
       int frame_count = file.frame_count_;
@@ -236,13 +241,15 @@ class VideoLoader : public Loader<GPUBackend, SequenceWrapper> {
                        "for file " + file_info_[i].video_file);
         }
       }
-
-      for (int s = start_frame; s < end_frame && s + total_count <= end_frame; s += step_) {
-        frame_starts_.emplace_back(sequence_meta{i, s, file_info_[i].label,
-                                   codecpar(stream)->height, codecpar(stream)->width});
-      }
+      frame_starts_.emplace_back(sequence_meta{i, start_frame, file_info_[i].label,
+                                 codecpar(stream)->height, codecpar(stream)->width,
+                                 file.frame_count_});
+     } catch (std::exception &e) {
+        // DALI_WARN(std::string(e.what()));
+        DALI_WARN("Just skip this file because Error when loading " + file_info_[i].video_file);
+        // throw;
+     }
     }
-
 
     const auto& file = get_or_open_file(file_info_[0].video_file);
     auto stream = file.fmt_ctx_->streams[file.vid_stream_idx_];
@@ -281,6 +288,9 @@ class VideoLoader : public Loader<GPUBackend, SequenceWrapper> {
   std::string file_root_;
   std::string file_list_;
   int count_;
+  int seg_num_;
+  int seg_length_;
+  bool is_training_;
   int step_;
   int stride_;
   int max_height_;

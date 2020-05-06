@@ -355,6 +355,7 @@ VideoFile& VideoLoader::get_or_open_file(const std::string &filename) {
     file.frame_base_ = AVRational{stream->avg_frame_rate.den,
                                   stream->avg_frame_rate.num};
     file.start_time_ = stream->start_time;
+
     if (file.start_time_ == AV_NOPTS_VALUE)
       file.start_time_ = 0;
     LOG_LINE
@@ -504,13 +505,10 @@ void VideoLoader::read_file() {
     seek(file, req.frame);
 
     auto nonkey_frame_count = 0;
-    int frames_left = req.count;
-    std::vector<bool> frames_read(frames_left, false);
 
     bool is_first_frame = true;
     bool key = false;
     bool seek_must_succeed = false;
-
     while (av_read_frame(file.fmt_ctx_.get(), &raw_pkt) >= 0) {
       auto pkt = pkt_ptr(&raw_pkt, av_packet_unref);
 
@@ -537,8 +535,6 @@ void VideoLoader::read_file() {
 
       if (frame > req.frame) {
         if (key) {
-          if (frames_left <= 0)
-            break;
           if (is_first_frame) {
             LOG_LINE << device_id_ << ": We got ahead of ourselves! "
                           << frame << " > " << req.frame << " + "
@@ -564,23 +560,7 @@ void VideoLoader::read_file() {
           seek_must_succeed = false;
         } else {
           nonkey_frame_count += pkt_frames;
-          // A heuristic so we don't go way over... what should "20" be?
-          if (frames_left <= 0 && frame > req.frame + req.count + 20) {
-            break;
-          }
         }
-      }
-
-      if (frame >= req.frame && frame < req.frame + req.count) {
-        if (frames_read[frame - req.frame]) {
-          ERROR_LOG << "Frame " << frame << " appeared twice\n";
-        } else {
-          frames_read[frame - req.frame] = true;
-          frames_left--;
-          LOG_LINE << "Frames left: " << frames_left << "\n";
-        }
-      } else {
-        LOG_LINE << "Frame " << frame << " not in the interesting range.\n";
       }
 
       LOG_LINE << device_id_ << ": Sending " << (key ? "  key " : "nonkey")
@@ -663,9 +643,32 @@ void VideoLoader::read_file() {
   LOG_LINE << "Leaving read_file" << std::endl;
 }
 
-void VideoLoader::push_sequence_to_read(std::string filename, int frame, int count) {
+void VideoLoader::push_sequence_to_read(std::string filename, int frame, int count, int total_frames) {
     int total_count = 1 + (count - 1) * stride_;
-    auto req = FrameReq{std::move(filename), frame, total_count, stride_, {0, 0}};
+    int partition = total_frames / seg_num_;
+    std::vector<int> selected_frames;
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    for (int i = 0; i < seg_num_; i++) {
+        int start = partition * i;
+        int end = partition * (i + 1) - seg_length_;
+        if (i == seg_num_ -1) {
+            end = total_frames - seg_length_;
+        }
+        end = std::max(start, end);
+
+        // generate random int in range [start, end)
+        int selected_index = (start + end) / 2;
+        if (is_training_) {
+            std::uniform_int_distribution<int> dist {start, end};
+            selected_index = dist(rng);
+        }
+        for (int j = 0; j < seg_length_; j++) {
+            selected_frames.push_back((selected_index + j) % total_frames);
+        }
+    }
+
+    auto req = FrameReq{std::move(filename), selected_frames[0], count, 0, {0, 0}, selected_frames};
     // give both reader thread and decoder a copy of what is coming
     send_queue_.push(req);
 }
@@ -713,7 +716,7 @@ void VideoLoader::ReadSample(SequenceWrapper& tensor) {
     tensor.initialize(count_, seq_meta.height, seq_meta.width, channels_, dtype_);
 
     push_sequence_to_read(file_info_[seq_meta.filename_idx].video_file,
-                          seq_meta.frame_idx, count_);
+                          seq_meta.frame_idx, count_, seq_meta.total_frames);
     receive_frames(tensor);
     ++current_frame_idx_;
 

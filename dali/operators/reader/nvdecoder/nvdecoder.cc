@@ -326,8 +326,9 @@ int NvDecoder::handle_display_(CUVIDPARSERDISPINFO* disp_info) {
               << " disp_info->picture_index: " << disp_info->picture_index
               << "\e[0m" << std::endl;
 
-  current_recv_.frame += current_recv_.stride;
-  current_recv_.count -= current_recv_.stride;
+  current_recv_.count -= 1;
+  current_recv_.stride += 1;
+  current_recv_.frame = current_recv_.frame_selected[current_recv_.stride];
 
   frame_in_use_[disp_info->picture_index] = true;
   frame_queue_.push(disp_info);

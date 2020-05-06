@@ -66,6 +66,15 @@ This option is mutually exclusive with `filenames` and `file_root`.)code",
   .AddArg("sequence_length",
       R"code(Frames to load per sequence.)code",
       DALI_INT32)
+  .AddArg("seg_num",
+      R"code(num of segmentations for each video clip.)code",
+      DALI_INT32)
+  .AddArg("seg_length",
+      R"code(length of each segmentation.)code",
+      DALI_INT32)
+  .AddOptionalArg("is_training",
+      R"code(is training or not.)code",
+      true)
   .AddOptionalArg("step",
       R"code(Frame interval between each sequence (if `step` < 0, `step` is set to `sequence_length`).)code",
       -1)

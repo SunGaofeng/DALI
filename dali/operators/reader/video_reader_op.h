@@ -34,6 +34,9 @@ class VideoReader : public DataReader<GPUBackend, SequenceWrapper> {
     enable_timestamps_(spec.GetArgument<bool>("enable_timestamps")),
     count_(spec.GetArgument<int>("sequence_length")),
     channels_(spec.GetArgument<int>("channels")),
+    seg_num_(spec.GetArgument<int>("seg_num")),
+    seg_length_(spec.GetArgument<int>("seg_length")),
+    is_training_(spec.GetArgument<bool>("is_training")),
     tl_shape_(batch_size_, sequence_dim),
     dtype_(spec.GetArgument<DALIDataType>("dtype")) {
     DALIImageType image_type(spec.GetArgument<DALIImageType>("image_type"));
@@ -57,6 +60,9 @@ class VideoReader : public DataReader<GPUBackend, SequenceWrapper> {
      DALI_ENFORCE(enable_label_output_ || !enable_timestamps_,
                   "timestamps can be enabled only when "
                   "`file_list` or `file_root` argument is passed");
+
+     DALI_ENFORCE(count_ == seg_num_ * seg_length_,
+                  "the sequence_length should be equal to seg_num * seg_length");
 
     // TODO(spanev): support rescale
     // TODO(spanev): Factor out the constructor body to make VideoReader compatible with lazy_init.
@@ -160,6 +166,9 @@ class VideoReader : public DataReader<GPUBackend, SequenceWrapper> {
   bool enable_timestamps_;
   int count_;
   int channels_;
+  int seg_num_;
+  int seg_length_;
+  bool is_training_;
 
   TensorListShape<> tl_shape_;
   TensorListShape<> label_shape_;
